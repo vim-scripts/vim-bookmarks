@@ -1,15 +1,14 @@
 This is a mirror of http://www.vim.org/scripts/script.php?script_id=4893
 
-This plugin allows to add and remove line-based bookmarks with just one (!) keystroke. Bookmarks will be highlighted in the vim sign column (default).
+This vim plugin allows toggling bookmarks per line. A quickfix window gives access to all bookmarks. Annotations can be added as well. These are special bookmarks with a comment attached. They are useful for preparing code reviews. All bookmarks will be restored on the next startup.
 
 Features:
-* Toggle bookmarks per line
-* Shows indicator in vim sign column
-* Optional line highlighting
-* Navigate all bookmarks with vim quickfix window
-* Jump between bookmarks in current buffer (previous/next)
-* Fully customisable (signs, sign column, line highlights, mappings)
-* Preserves signs from other plugins
+* Toggle bookmarks per line ⚑
+* Add annotations per line ☰
+* Navigate all bookmarks with quickfix window
+* Bookmarks will be restored on next startup
+* Fully customisable (signs, sign column, highlights, mappings)
+* Works independently from vim marks
 
 More details on GitHub:
 https://github.com/MattesGroeger/vim-bookmarks

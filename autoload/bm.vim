@@ -28,20 +28,27 @@ function! bm#get_bookmark_by_sign(file, sign_idx)
   return bm#get_bookmark_by_line(a:file, line_nr)
 endfunction
 
-function! bm#add_bookmark(file, sign_idx, line_nr, content)
+function! bm#add_bookmark(file, sign_idx, line_nr, content, ...)
   if !has_key(g:line_map, a:file)
     let g:line_map[a:file] = {}
     let g:sign_map[a:file] = {}
   endif
-  let entry = {'sign_idx': a:sign_idx, 'line_nr': a:line_nr, 'content': a:content}
+  let annotation = a:0 ==# 1 ? a:1 : ""
+  let entry = {'sign_idx': a:sign_idx, 'line_nr': a:line_nr, 'content': a:content, 'annotation': annotation}
   let g:line_map[a:file][a:line_nr]  = entry
   let g:sign_map[a:file][a:sign_idx] = a:line_nr
+  return entry
 endfunction
 
 function! bm#update_bookmark_for_sign(file, sign_idx, new_line_nr, new_content)
   let bookmark = bm#get_bookmark_by_sign(a:file, a:sign_idx)
   call bm#del_bookmark_at_line(a:file, bookmark['line_nr'])
-  call bm#add_bookmark(a:file, a:sign_idx, a:new_line_nr, a:new_content)
+  call bm#add_bookmark(a:file, a:sign_idx, a:new_line_nr, a:new_content, bookmark['annotation'])
+endfunction
+
+function! bm#update_annotation(file, sign_idx, annotation)
+  let bookmark = bm#get_bookmark_by_sign(a:file, a:sign_idx)
+  let bookmark['annotation'] = a:annotation
 endfunction
 
 function! bm#next(file, current_line_nr)
@@ -98,6 +105,10 @@ function! bm#del_bookmark_at_line(file, line_nr)
   endif
 endfunction
 
+function! bm#total_count()
+  return len(bm#location_list())
+endfunction
+
 function! bm#all_bookmarks_by_line(file)
   if !has_key(g:line_map, a:file)
     return {}
@@ -113,13 +124,18 @@ function! bm#all_lines(file)
 endfunction
 
 function! bm#location_list()
-  let files = bm#all_files()
+  let files = sort(bm#all_files())
   let locations = []
   for file in files
     let line_nrs = sort(bm#all_lines(file), "bm#compare_lines")
     for line_nr in line_nrs
       let bookmark = bm#get_bookmark_by_line(file, line_nr)
-      call add(locations, file .":". line_nr .":". bookmark['content'])
+      let content = bookmark['annotation'] !=# ''
+            \ ? "Annotation: ". bookmark['annotation']
+            \ : (bookmark['content'] !=# ""
+            \   ? bookmark['content']
+            \   : "empty line")
+      call add(locations, file .":". line_nr .":". content)
     endfor
   endfor
   return locations
@@ -130,11 +146,47 @@ function! bm#all_files()
 endfunction
 
 function! bm#del_all()
-  for file in keys(g:line_map)
-    for line_nr in keys(g:line_map[file])
+  for file in bm#all_files()
+    for line_nr in bm#all_lines(file)
       call bm#del_bookmark_at_line(file, line_nr)
     endfor
   endfor
+endfunction
+
+function! bm#serialize()
+  let file_version = "let l:bm_file_version = 1"
+  let sessions  = "let l:bm_sessions = {'default': {"
+  for file in bm#all_files()
+    let sessions .= "'". file ."': ["
+    for bm in values(bm#all_bookmarks_by_line(file))
+      let escaped_content = substitute(bm['content'], "'", "''", "g")
+      let annotation = bm['annotation'] !=# "" ? ", 'annotation': '". bm['annotation'] ."'" : ""
+      let sessions .= "{'sign_idx': ". bm['sign_idx'] .", 'line_nr': ". bm['line_nr'] .", 'content': '". escaped_content ."'". annotation ."},"
+    endfor
+    let sessions .= "],"
+  endfor
+  let sessions .= "}}"
+  let current_session = "let l:bm_current_session = 'default'"
+  return [file_version, sessions, current_session]
+endfunction
+
+function! bm#deserialize(data)
+    exec join(a:data, " | ")
+    let ses = l:bm_sessions["default"]
+    let result = []
+    for file in keys(ses)
+      for bm in ses[file]
+        let annotation = has_key(bm, 'annotation') ? bm['annotation'] : ''
+         call add(result, 
+            \ extend(
+              \ copy(
+                \ bm#add_bookmark(file, bm['sign_idx'], bm['line_nr'], bm['content'], annotation)
+              \ ),
+              \ {'file': file}
+            \ ))
+      endfor
+    endfor
+    return result
 endfunction
 
 " }}}
