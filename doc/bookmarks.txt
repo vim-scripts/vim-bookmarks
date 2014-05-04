@@ -37,8 +37,8 @@ Pathogen:
 <
 
 Vundle:
-  1. Add Bundle 'MattesGroeger/vim-bookmarks' to .vimrc
-  2. Run :BundleInstall
+  1. Add Plugin 'MattesGroeger/vim-bookmarks' to .vimrc
+  2. Run :PluginInstall
 
 NeoBundle:
   1. Add NeoBundle 'MattesGroeger/vim-bookmarks' to .vimrc
@@ -186,6 +186,12 @@ Turn off the warning when clearing all bookmarks (default 1):
 
 >
   let g:bookmark_show_warning = 0
+<
+
+Turn on vertical line centering when jumping to bookmark (default 0):
+
+>
+  let g:bookmark_center = 1
 <
 
 ===============================================================================
