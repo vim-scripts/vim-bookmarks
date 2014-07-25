@@ -23,22 +23,19 @@ call s:set('g:bookmark_show_warning',     1 )
 call s:set('g:bookmark_auto_save',        1 )
 call s:set('g:bookmark_center',           0 )
 call s:set('g:bookmark_auto_save_file',   $HOME .'/.vim-bookmarks')
+call s:set('g:bookmark_auto_close',       0 )
 
-if g:bookmark_auto_save ==# 1
-  augroup bm_auto_save
-    autocmd!
-    autocmd VimEnter * call LoadBookmarks(g:bookmark_auto_save_file, 1)
-    autocmd VimLeave * call SaveBookmarks(g:bookmark_auto_save_file)
-    autocmd BufWinEnter * call s:add_missing_signs(expand("<afile>:p"))
-  augroup END
-endif
+augroup bm_vim_enter
+   autocmd!
+   autocmd VimEnter * call s:set_up_auto_save(expand('<afile>:p'))
+augroup END
 
 " }}}
 
 
 " Commands {{{
 
-function! ToggleBookmark()
+function! BookmarkToggle()
   call s:refresh_line_numbers()
   let file = expand("%:p")
   if file ==# ""
@@ -53,9 +50,9 @@ function! ToggleBookmark()
     echo "Bookmark added"
   endif
 endfunction
-command! ToggleBookmark call ToggleBookmark()
-
-function! Annotate(...)
+command! ToggleBookmark call CallDeprecatedCommand('BookmarkToggle', [])
+command! BookmarkToggle call BookmarkToggle()
+function! BookmarkAnnotate(...)
   call s:refresh_line_numbers()
   let file = expand("%:p")
   if file ==# ""
@@ -96,9 +93,10 @@ function! Annotate(...)
     echo "Bookmark added with annotation: ". new_annotation
   endif
 endfunction
-command! -nargs=* Annotate call Annotate(<q-args>, 0)
+command! -nargs=* Annotate call CallDeprecatedCommand('BookmarkAnnotate', [<q-args>, 0])
+command! -nargs=* BookmarkAnnotate call BookmarkAnnotate(<q-args>, 0)
 
-function! ClearBookmarks()
+function! BookmarkClear()
   call s:refresh_line_numbers()
   let file = expand("%:p")
   let lines = bm#all_lines(file)
@@ -107,61 +105,79 @@ function! ClearBookmarks()
   endfor
   echo "Bookmarks removed"
 endfunction
-command! ClearBookmarks call ClearBookmarks()
+command! ClearBookmarks call CallDeprecatedCommand('BookmarkClear', [])
+command! BookmarkClear call BookmarkClear()
 
-function! ClearAllBookmarks()
+function! BookmarkClearAll(silent)
   call s:refresh_line_numbers()
   let files = bm#all_files()
   let file_count = len(files)
   let delete = 1
   let in_multiple_files = file_count ># 1
   let supports_confirm = has("dialog_con") || has("dialog_gui")
-  if (in_multiple_files && g:bookmark_show_warning ==# 1 && supports_confirm)
+  if (in_multiple_files && g:bookmark_show_warning ==# 1 && supports_confirm && !a:silent)
     let delete = confirm("Delete ". bm#total_count() ." bookmarks in ". file_count . " buffers?", "&Yes\n&No")
   endif
   if (delete ==# 1)
     call s:remove_all_bookmarks()
-    execute ":redraw!"
-    echo "All bookmarks removed"
+    if (!a:silent)
+      execute ":redraw!"
+      echo "All bookmarks removed"
+    endif
   endif
 endfunction
-command! ClearAllBookmarks call ClearAllBookmarks()
+command! ClearAllBookmarks call CallDeprecatedCommand('BookmarkClearAll', [0])
+command! BookmarkClearAll call BookmarkClearAll(0)
 
-function! NextBookmark()
+function! BookmarkNext()
   call s:refresh_line_numbers()
   call s:jump_to_bookmark('next')
 endfunction
-command! NextBookmark call NextBookmark()
+command! NextBookmark call CallDeprecatedCommand('BookmarkNext')
+command! BookmarkNext call BookmarkNext()
 
-function! PrevBookmark()
+function! BookmarkPrev()
   call s:refresh_line_numbers()
   call s:jump_to_bookmark('prev')
 endfunction
-command! PrevBookmark call PrevBookmark()
+command! PrevBookmark call CallDeprecatedCommand('BookmarkPrev')
+command! BookmarkPrev call BookmarkPrev()
 
-function! ShowAllBookmarks()
-  call s:refresh_line_numbers()
-  let oldformat = &errorformat    " backup original format
-  let &errorformat = "%f:%l:%m"   " custom format for bookmarks
-  cgetexpr bm#location_list()
-  copen
-  let &errorformat = oldformat    " re-apply original format
+function! BookmarkShowAll()
+  if s:is_quickfix_win()
+    q
+  else
+    call s:refresh_line_numbers()
+    let oldformat = &errorformat    " backup original format
+    let &errorformat = "%f:%l:%m"   " custom format for bookmarks
+    cgetexpr bm#location_list()
+    belowright copen
+    augroup BM_AutoCloseCommand
+      autocmd!
+      autocmd WinLeave * call s:auto_close()
+    augroup END
+    let &errorformat = oldformat    " re-apply original format
+  endif
 endfunction
-command! ShowAllBookmarks call ShowAllBookmarks()
+command! ShowAllBookmarks call CallDeprecatedCommand('BookmarkShowAll')
+command! BookmarkShowAll call BookmarkShowAll()
 
-function! SaveBookmarks(target_file)
+function! BookmarkSave(target_file, silent)
   call s:refresh_line_numbers()
   let serialized_bookmarks = bm#serialize()
   call writefile(serialized_bookmarks, a:target_file)
-  echo "All bookmarks saved"
+  if (!a:silent)
+    echo "All bookmarks saved"
+  endif
 endfunction
-command! -nargs=1 SaveBookmarks call SaveBookmarks(<f-args>)
+command! -nargs=1 SaveBookmarks call CallDeprecatedCommand('BookmarkSave', [<f-args>, 0])
+command! -nargs=1 BookmarkSave call BookmarkSave(<f-args>, 0)
 
-function! LoadBookmarks(target_file, startup)
+function! BookmarkLoad(target_file, startup, silent)
   let supports_confirm = has("dialog_con") || has("dialog_gui")
   let has_bookmarks = bm#total_count() ># 0
   let confirmed = 1
-  if (supports_confirm && has_bookmarks)
+  if (supports_confirm && has_bookmarks && !a:silent)
     let confirmed = confirm("Do you want to override your ". bm#total_count() ." bookmarks?", "&Yes\n&No")
   endif
   if (confirmed ==# 1)
@@ -173,16 +189,27 @@ function! LoadBookmarks(target_file, startup)
         for entry in new_entries
           call bm_sign#add_at(entry['file'], entry['sign_idx'], entry['line_nr'], entry['annotation'] !=# "")
         endfor
-        echo "Bookmarks loaded"
+        if (!a:silent)
+          echo "Bookmarks loaded"
+        endif
+        return 1
       endif
     catch
-      if !a:startup
+      if (!a:startup && !a:silent)
         echo "Failed to load/parse file"
       endif
+      return 0
     endtry
   endif
 endfunction
-command! -nargs=1 LoadBookmarks call LoadBookmarks(<f-args>, 0)
+command! -nargs=1 LoadBookmarks call CallDeprecatedCommand('BookmarkLoad', [<f-args>, 0, 0])
+command! -nargs=1 BookmarkLoad call BookmarkLoad(<f-args>, 0, 0)
+
+function! CallDeprecatedCommand(fun, args)
+  echo "Warning: Deprecated command, please use ':". a:fun ."' instead"
+  let Fn = function(a:fun)
+  return call(Fn, a:args)
+endfunction
 
 " }}}
 
@@ -210,8 +237,9 @@ function! s:refresh_line_numbers()
   let sign_line_map = bm_sign#lines_for_signs(file)
   for sign_idx in keys(sign_line_map)
     let line_nr = sign_line_map[sign_idx]
-    let content = getbufline(bufnr, line_nr)
-    call bm#update_bookmark_for_sign(file, sign_idx, line_nr, content[0])
+    let line_content = getbufline(bufnr, line_nr)
+    let content = len(line_content) > 0 ? line_content[0] : ' '
+    call bm#update_bookmark_for_sign(file, sign_idx, line_nr, content)
   endfor
 endfunction
 
@@ -255,12 +283,47 @@ function! s:remove_all_bookmarks()
   endfor
 endfunction
 
+function! s:startup_load_bookmarks(file)
+  call BookmarkLoad(g:bookmark_auto_save_file, 1, 0)
+  call s:add_missing_signs(a:file)
+endfunction
+
 " should only be called from autocmd!
 function! s:add_missing_signs(file)
   let bookmarks = values(bm#all_bookmarks_by_line(a:file))
   for bookmark in bookmarks
     call bm_sign#add_at(a:file, bookmark['sign_idx'], bookmark['line_nr'], bookmark['annotation'] !=# "")
   endfor
+endfunction
+
+function! s:is_quickfix_win()
+  return getbufvar(winbufnr('.'), '&buftype') == 'quickfix'
+endfunction
+
+function! s:auto_close()
+  if s:is_quickfix_win()
+    if (g:bookmark_auto_close)
+      q
+    endif
+    call s:remove_auto_close()
+  endif
+endfunction
+
+function! s:remove_auto_close()
+   augroup BM_AutoCloseCommand
+      autocmd!
+   augroup END
+endfunction
+
+function! s:set_up_auto_save(file)
+   if g:bookmark_auto_save ==# 1
+     call s:startup_load_bookmarks(a:file)
+     augroup bm_auto_save
+       autocmd!
+       autocmd VimLeave * call BookmarkSave(g:bookmark_auto_save_file, 0)
+       autocmd BufWinEnter * call s:add_missing_signs(expand('<afile>:p'))
+     augroup END
+   endif
 endfunction
 
 " }}}
@@ -275,12 +338,12 @@ function! s:register_mapping(command, shortcut)
   endif
 endfunction
 
-call s:register_mapping('ShowAllBookmarks',  'ma')
-call s:register_mapping('ToggleBookmark',    'mm')
-call s:register_mapping('Annotate',          'mi')
-call s:register_mapping('NextBookmark',      'mn')
-call s:register_mapping('PrevBookmark',      'mp')
-call s:register_mapping('ClearBookmarks',    'mc')
-call s:register_mapping('ClearAllBookmarks', 'mx')
+call s:register_mapping('BookmarkShowAll',  'ma')
+call s:register_mapping('BookmarkToggle',   'mm')
+call s:register_mapping('BookmarkAnnotate', 'mi')
+call s:register_mapping('BookmarkNext',     'mn')
+call s:register_mapping('BookmarkPrev',     'mp')
+call s:register_mapping('BookmarkClear',    'mc')
+call s:register_mapping('BookmarkClearAll', 'mx')
 
 " }}}
