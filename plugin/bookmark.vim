@@ -1,6 +1,6 @@
-" if exists('g:bm_has_any') || !has('signs') || &cp
-"   finish
-" endif
+if exists('g:bm_has_any') || !has('signs') || &cp
+  finish
+endif
 let g:bm_has_any = 0
 let g:bm_sign_index = 9500
 
@@ -16,14 +16,15 @@ function! s:set(var, default)
   endif
 endfunction
 
-call s:set('g:bookmark_highlight_lines',  0 )
-call s:set('g:bookmark_sign',            '⚑')
-call s:set('g:bookmark_annotation_sign', '☰')
-call s:set('g:bookmark_show_warning',     1 )
-call s:set('g:bookmark_auto_save',        1 )
-call s:set('g:bookmark_center',           0 )
-call s:set('g:bookmark_auto_save_file',   $HOME .'/.vim-bookmarks')
-call s:set('g:bookmark_auto_close',       0 )
+call s:set('g:bookmark_highlight_lines',      0 )
+call s:set('g:bookmark_sign',                '⚑')
+call s:set('g:bookmark_annotation_sign',     '☰')
+call s:set('g:bookmark_show_warning',         1 )
+call s:set('g:bookmark_save_per_working_dir', 0 )
+call s:set('g:bookmark_auto_save',            1 )
+call s:set('g:bookmark_auto_save_file',       $HOME .'/.vim-bookmarks')
+call s:set('g:bookmark_auto_close',           0 )
+call s:set('g:bookmark_center',               0 )
 
 augroup bm_vim_enter
    autocmd!
@@ -151,11 +152,15 @@ function! BookmarkShowAll()
     let oldformat = &errorformat    " backup original format
     let &errorformat = "%f:%l:%m"   " custom format for bookmarks
     cgetexpr bm#location_list()
-    belowright copen
-    augroup BM_AutoCloseCommand
-      autocmd!
-      autocmd WinLeave * call s:auto_close()
-    augroup END
+    if exists(':Unite') && !empty(unite#get_all_sources('quickfix'))
+      exec ":Unite quickfix"
+    else
+      belowright copen
+      augroup BM_AutoCloseCommand
+        autocmd!
+        autocmd WinLeave * call s:auto_close()
+      augroup END
+    endif
     let &errorformat = oldformat    " re-apply original format
   endif
 endfunction
@@ -164,10 +169,14 @@ command! BookmarkShowAll call BookmarkShowAll()
 
 function! BookmarkSave(target_file, silent)
   call s:refresh_line_numbers()
-  let serialized_bookmarks = bm#serialize()
-  call writefile(serialized_bookmarks, a:target_file)
-  if (!a:silent)
-    echo "All bookmarks saved"
+  if (bm#total_count() > 0 || !g:bookmark_save_per_working_dir)
+    let serialized_bookmarks = bm#serialize()
+    call writefile(serialized_bookmarks, a:target_file)
+    if (!a:silent)
+      echo "All bookmarks saved"
+    endif
+  elseif (g:bookmark_save_per_working_dir)
+    call delete(a:target_file) " remove file, if no bookmarks
   endif
 endfunction
 command! -nargs=1 SaveBookmarks call CallDeprecatedCommand('BookmarkSave', [<f-args>, 0])
@@ -284,8 +293,20 @@ function! s:remove_all_bookmarks()
 endfunction
 
 function! s:startup_load_bookmarks(file)
-  call BookmarkLoad(g:bookmark_auto_save_file, 1, 0)
+  call BookmarkLoad(s:bookmark_save_file(), 1, 1)
   call s:add_missing_signs(a:file)
+endfunction
+
+function! s:bookmark_save_file()
+  if (g:bookmark_save_per_working_dir)
+    return exists("*g:BMWorkDirFileLocation") ? g:BMWorkDirFileLocation() : s:default_file_location()
+  else
+    return g:bookmark_auto_save_file
+  endif
+endfunction
+
+function! s:default_file_location()
+    return getcwd(). '/.vim-bookmarks'
 endfunction
 
 " should only be called from autocmd!
@@ -320,7 +341,7 @@ function! s:set_up_auto_save(file)
      call s:startup_load_bookmarks(a:file)
      augroup bm_auto_save
        autocmd!
-       autocmd VimLeave * call BookmarkSave(g:bookmark_auto_save_file, 0)
+       autocmd VimLeave * call BookmarkSave(s:bookmark_save_file(), 1)
        autocmd BufWinEnter * call s:add_missing_signs(expand('<afile>:p'))
      augroup END
    endif

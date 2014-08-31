@@ -10,7 +10,9 @@ Features:
 * Add annotations per line ☰
 * Navigate all bookmarks with quickfix window
 * Bookmarks will be restored on next startup
+* Bookmarks per working directory (optional)
 * Fully customisable (signs, sign column, highlights, mappings)
+* Integrates with Unite's quickfix source if installed
 * Works independently from vim marks
 
 More details on GitHub:
